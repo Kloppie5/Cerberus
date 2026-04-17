@@ -16,6 +16,24 @@ internal class Program
         foreach(var device in devices)
         {
             Console.WriteLine($"{device.Name} - {device.Description}");
+
+            device.OnPacketArrival += (sender, e) =>
+            {
+                var packet = e.GetPacket();
+                Console.WriteLine($"{device.Name}: Packet: {packet.Timeval.Date} Length: {packet.Data.Length}");
+            };
+
+            device.Open(DeviceModes.Promiscuous);
+            device.StartCapture();
+        }
+
+        Console.WriteLine("Capturing");
+        Console.ReadLine();
+
+        foreach (var device in devices)
+        {
+            device.StopCapture();
+            device.Close();
         }
     }
 }
