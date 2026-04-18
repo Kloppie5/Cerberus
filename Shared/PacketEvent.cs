@@ -1,4 +1,6 @@
-﻿public class PacketEvent
+﻿namespace Cerberus.Shared;
+
+public class PacketEvent
 {
     public required DateTime Timestamp { get; set; }
 
