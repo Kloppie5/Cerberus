@@ -1,6 +1,8 @@
 ﻿using Cerberus.Shared;
 using SharpPcap;
 
+namespace Cerberus.Backend;
+
 public class PacketCaptureParser
 {
     public static PacketEvent? Parse(RawCapture rawCapture)

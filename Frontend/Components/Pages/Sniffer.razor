@@ -1,0 +1,100 @@
+﻿@page "/sniffer"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.SignalR.Client
+@using Cerberus.Shared
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<h1>Packet Sniffer</h1>
+<p>Status: @status</p>
+
+<button @onclick="StartCapture">Start</button>
+<button @onclick="StopCapture">Stop</button>
+
+<h2>Packets (@packets.Count)</h2>
+<ul>
+    @foreach (var packet in packets.ToList())
+    {
+        <li>@packet.SourceIp:@packet.SourcePort → @packet.DestinationIp:@packet.DestinationPort (@packet.Protocol)</li>
+    }
+</ul>
+
+@code {
+    private HubConnection? hubConnection;
+    private List<PacketEvent> packets = new();
+    private string status = "Disconnected";
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("https://localhost:5000/packetHub"), options =>
+            {
+                options.HttpMessageHandlerFactory = (msg) =>
+                {
+                    var handler = new HttpClientHandler();
+                    handler.ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => true;
+                    return handler;
+                };
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<PacketEvent>("ReceivePacket", packet =>
+        {
+            packets.Insert(0, packet);
+            InvokeAsync(StateHasChanged);
+        });
+
+        try
+        {
+            await hubConnection.StartAsync();
+            status = "Connected to backend";
+        }
+        catch (Exception ex)
+        {
+            status = $"Connection failed: {ex.Message}";
+        }
+    }
+
+    private async Task StartCapture()
+    {
+        try
+        {
+            var handler = new HttpClientHandler();
+            handler.ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => true;
+            var client = new HttpClient(handler);
+
+            var response = await client.PostAsync("https://localhost:5000/api/capture/start", null);
+            status = response.IsSuccessStatusCode ? "Capturing..." : "Start failed";
+        }
+        catch (Exception ex)
+        {
+            status = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task StopCapture()
+    {
+        try
+        {
+            var handler = new HttpClientHandler();
+            handler.ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => true;
+            var client = new HttpClient(handler);
+
+            var response = await client.PostAsync("https://localhost:5000/api/capture/stop", null);
+            status = response.IsSuccessStatusCode ? "Stopped" : "Stop failed";
+        }
+        catch (Exception ex)
+        {
+            status = $"Error: {ex.Message}";
+        }
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

@@ -1,52 +1,63 @@
-﻿using PacketDotNet;
-using SharpPcap;
-using SharpPcap.LibPcap;
-using System.Collections;
+﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.SignalR;
+using Cerberus.Shared;
+using Cerberus.Backend;
 
 internal class Program
 {
     private static void Main(string[] args)
     {
-        var devices = CaptureDeviceList.Instance;
+        var builder = WebApplication.CreateBuilder(args);
 
-        if (devices.Count == 0)
+        builder.Services.AddRazorComponents()
+            .AddInteractiveServerComponents();
+
+        builder.Services.AddSignalR();
+        builder.Services.AddSingleton<PacketSnifferService>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<PacketSnifferService>());
+
+        builder.Services.AddCors(options =>
         {
-            Console.WriteLine("No devices found");
-            return;
-        }
-
-        foreach (var device in devices)
-        {
-            Console.WriteLine($"{device.Name} - {device.Description}");
-
-            device.OnPacketArrival += (sender, e) =>
+            options.AddDefaultPolicy(policy =>
             {
-                var rawCapture = e.GetPacket();
+                policy.WithOrigins("https://localhost:7000")
+                    .AllowAnyMethod()
+                    .AllowAnyHeader()
+                    .AllowCredentials();
+            });
+        });
 
-                var parsed = PacketCaptureParser.Parse(rawCapture);
+        var app = builder.Build();
 
-                if (parsed != null)
-                {
-                    Console.WriteLine(
-                        $"{device.Name}: {parsed.Timestamp} " +
-                        $"{parsed.SourceIp}:{parsed.SourcePort} -> " +
-                        $"{parsed.DestinationIp}:{parsed.DestinationPort} " +
-                        $"{parsed.Protocol} ({parsed.Length} bytes)"
-                    );
-                }
-            };
+        app.UseHttpsRedirection();
+        app.UseStaticFiles();
+        app.UseAntiforgery();
+        app.UseCors();
 
-            device.Open(DeviceModes.Promiscuous);
-            device.StartCapture();
-        }
+        app.MapHub<PacketEventHub>("/packetHub");
 
-        Console.WriteLine("Capturing");
-        Console.ReadLine();
-
-        foreach (var device in devices)
+        app.MapPost("/api/capture/start", async (PacketSnifferService service) =>
         {
-            device.StopCapture();
-            device.Close();
-        }
+            service.StartCapture();
+            return Results.Ok("Capture started");
+        });
+
+        app.MapPost("/api/capture/stop", async (PacketSnifferService service) =>
+        {
+            service.StopCapture();
+            return Results.Ok("Capture stopped");
+        });
+
+        app.MapGet("/api/capture/devices", (PacketSnifferService service) =>
+        {
+            return service.GetAvailableDevices();
+        });
+
+        app.MapGet("/api/capture/status", (PacketSnifferService service) =>
+        {
+            return new { isCapturing = service.IsCapturing };
+        });
+
+        app.Run();
     }
 }
